@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>OMIE Precios</title>
+    <link>https://github.com/edgarsanchoaqlara-droid/omie-precios</link>
+    <description>Datos diarios de precios OMIE</description>
+
+    <item>
+      <title>OMIE 2026-10-01</title>
+      <link>https://github.com/edgarsanchoaqlara-droid/omie-precios</link>
+      <guid isPermaLink="false">omie-20261001115443</guid>
+      <pubDate>Thu, 01 Oct 2026 11:54:43 GMT</pubDate>
+      <description>eyJhdmFpbGFibGUiOmZhbHNlLCJmZWNoYV9tYW5hbmEiOiIyMDI2LTEwLTAyIiwibW90aXZvIjoiT01JRSB0b2RhdsOtYSBubyBoYSBwdWJsaWNhZG8gbG9zIHByZWNpb3MgZGUgbWHDsWFuYS4ifQ==</description>
+    </item>
+
+  </channel>
+</rss>
