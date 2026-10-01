@@ -26,8 +26,7 @@ jobs:
           import urllib.error
           import datetime
           import json
-          import os
-          import sys
+          import base64
           from zoneinfo import ZoneInfo
 
           MADRID = ZoneInfo("Europe/Madrid")
@@ -75,10 +74,6 @@ jobs:
 
                   raise
 
-              except Exception as error:
-                  print("Error descargando OMIE:", error)
-                  raise
-
               texto = contenido.decode(
                   "latin-1",
                   errors="replace"
@@ -105,8 +100,7 @@ jobs:
                       periodo = int(columnas[3])
 
                       precio = float(
-                          columnas[5].strip()
-                          .replace(",", ".")
+                          columnas[5].strip().replace(",", ".")
                       )
 
                   except (ValueError, TypeError):
@@ -144,9 +138,9 @@ jobs:
               ]
 
 
-          # --------------------------------------------------
-          # PRIMERO COMPROBAMOS MAÑANA
-          # --------------------------------------------------
+          # ==================================================
+          # PRIMERO: COMPROBAR SI EXISTE MAÑANA
+          # ==================================================
 
           precios_manana = descargar_precios(manana)
 
@@ -164,9 +158,9 @@ jobs:
 
           else:
 
-              # --------------------------------------------------
-              # MAÑANA EXISTE -> DESCARGAMOS TAMBIÉN HOY
-              # --------------------------------------------------
+              # ==================================================
+              # MAÑANA EXISTE -> OBTENER TAMBIÉN HOY
+              # ==================================================
 
               precios_hoy = descargar_precios(hoy)
 
@@ -200,9 +194,10 @@ jobs:
               print("Hoy:", len(precios_hoy))
               print("Mañana:", len(precios_manana))
 
-          # --------------------------------------------------
-          # GUARDAR RESULTADO
-          # --------------------------------------------------
+
+          # ==================================================
+          # GUARDAR JSON
+          # ==================================================
 
           with open(
               "omie.json",
@@ -220,17 +215,88 @@ jobs:
           print("")
           print("omie.json actualizado correctamente.")
 
+
+          # ==================================================
+          # CREAR RSS PARA POWER AUTOMATE
+          # ==================================================
+
+          json_texto = json.dumps(
+              datos,
+              ensure_ascii=False,
+              separators=(",", ":")
+          )
+
+          contenido_base64 = base64.b64encode(
+              json_texto.encode("utf-8")
+          ).decode("ascii")
+
+          ahora_utc = datetime.datetime.now(
+              datetime.timezone.utc
+          )
+
+          fecha_rss = ahora_utc.strftime(
+              "%a, %d %b %Y %H:%M:%S GMT"
+          )
+
+          identificador = (
+              "omie-" +
+              ahora_utc.strftime("%Y%m%d%H%M%S")
+          )
+
+          rss = f"""<?xml version="1.0" encoding="UTF-8"?>
+          <rss version="2.0">
+            <channel>
+              <title>OMIE Precios</title>
+              <link>https://github.com/edgarsanchoaqlara-droid/omie-precios</link>
+              <description>Datos diarios de precios OMIE</description>
+
+              <item>
+                <title>OMIE {hoy.isoformat()}</title>
+                <link>https://github.com/edgarsanchoaqlara-droid/omie-precios</link>
+                <guid isPermaLink="false">{identificador}</guid>
+                <pubDate>{fecha_rss}</pubDate>
+                <description>{contenido_base64}</description>
+              </item>
+
+            </channel>
+          </rss>
+          """
+
+          with open(
+              "omie.xml",
+              "w",
+              encoding="utf-8"
+          ) as archivo:
+
+              archivo.write(rss)
+
+          print("")
+          print("omie.xml actualizado correctamente.")
+
+
+      # ==================================================
+      # GUARDAR RESULTADOS EN GITHUB
+      # ==================================================
+
       - name: Guardar resultado
         shell: bash
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add omie.json
+          git config user.name "github-actions[bot]"
+
+          git config user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add omie.json omie.xml
 
           if git diff --cached --quiet; then
+
             echo "No hay cambios en los datos OMIE."
+
           else
+
             git commit -m "Actualizar precios OMIE"
+
             git push
+
           fi
