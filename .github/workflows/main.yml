@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
   schedule:
-    - cron: "*/15 13-15 * * *"
+    - cron: "*/15 * * * *"
       timezone: "Europe/Madrid"
 
 permissions:
@@ -27,6 +27,7 @@ jobs:
           import datetime
           import json
           import base64
+          import os
           from zoneinfo import ZoneInfo
 
           MADRID = ZoneInfo("Europe/Madrid")
@@ -36,6 +37,11 @@ jobs:
 
           print("Fecha de hoy:", hoy)
           print("Fecha de mañana:", manana)
+
+
+          # ==================================================
+          # DESCARGAR PRECIOS OMIE
+          # ==================================================
 
           def descargar_precios(fecha):
 
@@ -59,6 +65,7 @@ jobs:
               )
 
               try:
+
                   with urllib.request.urlopen(
                       request,
                       timeout=30
@@ -69,7 +76,12 @@ jobs:
               except urllib.error.HTTPError as error:
 
                   if error.code == 404:
-                      print("OMIE todavía no ha publicado este fichero.")
+
+                      print(
+                          "OMIE todavía no ha publicado "
+                          "este fichero."
+                      )
+
                       return None
 
                   raise
@@ -94,16 +106,20 @@ jobs:
                       continue
 
                   try:
+
                       anio = int(columnas[0])
                       mes = int(columnas[1])
                       dia = int(columnas[2])
                       periodo = int(columnas[3])
 
                       precio = float(
-                          columnas[5].strip().replace(",", ".")
+                          columnas[5]
+                          .strip()
+                          .replace(",", ".")
                       )
 
                   except (ValueError, TypeError):
+
                       continue
 
                   if (
@@ -111,6 +127,7 @@ jobs:
                       or mes != fecha.month
                       or dia != fecha.day
                   ):
+
                       continue
 
                   precios.append({
@@ -120,9 +137,13 @@ jobs:
 
               cantidad = len(precios)
 
-              print("Registros encontrados:", cantidad)
+              print(
+                  "Registros encontrados:",
+                  cantidad
+              )
 
               if cantidad not in (92, 96, 100):
+
                   raise Exception(
                       f"Numero de registros inesperado "
                       f"para {fecha_str}: {cantidad}"
@@ -139,60 +160,186 @@ jobs:
 
 
           # ==================================================
-          # PRIMERO: COMPROBAR SI EXISTE MAÑANA
+          # COMPROBAR MAÑANA
           # ==================================================
 
           precios_manana = descargar_precios(manana)
 
+
           if precios_manana is None:
 
               datos = {
+
                   "available": False,
-                  "fecha_manana": manana.isoformat(),
-                  "motivo": "OMIE todavía no ha publicado los precios de mañana."
+
+                  "fecha_manana":
+                      manana.isoformat(),
+
+                  "motivo":
+                      "OMIE todavía no ha publicado "
+                      "los precios de mañana."
               }
 
               print("")
-              print("MAÑANA TODAVÍA NO ESTÁ DISPONIBLE.")
-              print("No se actualizará Excel.")
+              print(
+                  "MAÑANA TODAVÍA NO ESTÁ DISPONIBLE."
+              )
 
           else:
 
               # ==================================================
-              # MAÑANA EXISTE -> OBTENER TAMBIÉN HOY
+              # MAÑANA EXISTE -> OBTENER HOY
               # ==================================================
 
               precios_hoy = descargar_precios(hoy)
 
               if precios_hoy is None:
+
                   raise Exception(
-                      "OMIE tiene mañana disponible pero no se ha podido "
-                      "obtener el fichero de hoy."
+                      "OMIE tiene mañana disponible "
+                      "pero no se ha podido obtener "
+                      "el fichero de hoy."
                   )
 
               datos = {
+
                   "available": True,
 
-                  "fecha_hoy": hoy.isoformat(),
-                  "fecha_manana": manana.isoformat(),
+                  "fecha_hoy":
+                      hoy.isoformat(),
+
+                  "fecha_manana":
+                      manana.isoformat(),
 
                   "hoy": {
-                      "registros": len(precios_hoy),
-                      "precios": precios_hoy
+
+                      "registros":
+                          len(precios_hoy),
+
+                      "precios":
+                          precios_hoy
                   },
 
                   "manana": {
-                      "registros": len(precios_manana),
-                      "precios": precios_manana
+
+                      "registros":
+                          len(precios_manana),
+
+                      "precios":
+                          precios_manana
                   }
               }
 
               print("")
-              print("======================================")
-              print(" DATOS OMIE DISPONIBLES")
-              print("======================================")
-              print("Hoy:", len(precios_hoy))
-              print("Mañana:", len(precios_manana))
+              print(
+                  "======================================"
+              )
+              print(
+                  " DATOS OMIE DISPONIBLES"
+              )
+              print(
+                  "======================================"
+              )
+
+              print(
+                  "Hoy:",
+                  len(precios_hoy)
+              )
+
+              print(
+                  "Mañana:",
+                  len(precios_manana)
+              )
+
+
+          # ==================================================
+          # COMPROBAR SI LOS DATOS HAN CAMBIADO
+          # ==================================================
+
+          datos_actuales = None
+
+          if os.path.exists("omie.json"):
+
+              try:
+
+                  with open(
+                      "omie.json",
+                      "r",
+                      encoding="utf-8"
+                  ) as archivo:
+
+                      datos_actuales = json.load(
+                          archivo
+                      )
+
+              except Exception:
+
+                  print(
+                      "No se ha podido leer "
+                      "el omie.json existente."
+                  )
+
+
+          datos_nuevos_texto = json.dumps(
+              datos,
+              ensure_ascii=False,
+              sort_keys=True,
+              separators=(",", ":")
+          )
+
+          datos_actuales_texto = None
+
+          if datos_actuales is not None:
+
+              datos_actuales_texto = json.dumps(
+                  datos_actuales,
+                  ensure_ascii=False,
+                  sort_keys=True,
+                  separators=(",", ":")
+              )
+
+
+          # ==================================================
+          # SI NO HAY CAMBIOS -> NO HACER NADA
+          # ==================================================
+
+          if (
+              datos_actuales_texto is not None
+              and datos_actuales_texto ==
+                  datos_nuevos_texto
+          ):
+
+              print("")
+              print(
+                  "Los datos OMIE no han cambiado."
+              )
+
+              print(
+                  "No se actualizarán "
+                  "omie.json ni omie.xml."
+              )
+
+              print(
+                  "No se realizará ningún commit."
+              )
+
+              exit(0)
+
+
+          # ==================================================
+          # LOS DATOS HAN CAMBIADO
+          # ==================================================
+
+          print("")
+          print(
+              "======================================"
+          )
+          print(
+              " CAMBIO DETECTADO EN DATOS OMIE"
+          )
+          print(
+              "======================================"
+          )
 
 
           # ==================================================
@@ -213,7 +360,9 @@ jobs:
               )
 
           print("")
-          print("omie.json actualizado correctamente.")
+          print(
+              "omie.json actualizado correctamente."
+          )
 
 
           # ==================================================
@@ -230,37 +379,66 @@ jobs:
               json_texto.encode("utf-8")
           ).decode("ascii")
 
+
           ahora_utc = datetime.datetime.now(
               datetime.timezone.utc
           )
+
 
           fecha_rss = ahora_utc.strftime(
               "%a, %d %b %Y %H:%M:%S GMT"
           )
 
+
           identificador = (
               "omie-" +
-              ahora_utc.strftime("%Y%m%d%H%M%S")
+              ahora_utc.strftime(
+                  "%Y%m%d%H%M%S"
+              )
           )
+
 
           rss = f"""<?xml version="1.0" encoding="UTF-8"?>
           <rss version="2.0">
             <channel>
               <title>OMIE Precios</title>
-              <link>https://github.com/edgarsanchoaqlara-droid/omie-precios</link>
-              <description>Datos diarios de precios OMIE</description>
+
+              <link>
+                https://github.com/edgarsanchoaqlara-droid/omie-precios
+              </link>
+
+              <description>
+                Datos diarios de precios OMIE
+              </description>
 
               <item>
-                <title>OMIE {hoy.isoformat()}</title>
-                <link>https://github.com/edgarsanchoaqlara-droid/omie-precios</link>
-                <guid isPermaLink="false">{identificador}</guid>
-                <pubDate>{fecha_rss}</pubDate>
-                <description>{contenido_base64}</description>
+
+                <title>
+                  OMIE {hoy.isoformat()}
+                </title>
+
+                <link>
+                  https://github.com/edgarsanchoaqlara-droid/omie-precios
+                </link>
+
+                <guid isPermaLink="false">
+                  {identificador}
+                </guid>
+
+                <pubDate>
+                  {fecha_rss}
+                </pubDate>
+
+                <description>
+                  {contenido_base64}
+                </description>
+
               </item>
 
             </channel>
           </rss>
           """
+
 
           with open(
               "omie.xml",
@@ -270,8 +448,11 @@ jobs:
 
               archivo.write(rss)
 
+
           print("")
-          print("omie.xml actualizado correctamente.")
+          print(
+              "omie.xml actualizado correctamente."
+          )
 
 
       # ==================================================
@@ -282,7 +463,8 @@ jobs:
         shell: bash
         run: |
 
-          git config user.name "github-actions[bot]"
+          git config user.name \
+            "github-actions[bot]"
 
           git config user.email \
             "41898282+github-actions[bot]@users.noreply.github.com"
@@ -295,7 +477,8 @@ jobs:
 
           else
 
-            git commit -m "Actualizar precios OMIE"
+            git commit \
+              -m "Actualizar precios OMIE"
 
             git push
 
