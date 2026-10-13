@@ -87,140 +87,64 @@ jobs:
 
 
           # ==================================================
-          # DETERMINAR FECHA OBJETIVO
+          # DETERMINAR FECHAS A COMPROBAR
           # ==================================================
 
-          fecha_objetivo = None
-
           objetivo_anterior = None
-
           disponible_anterior = False
-
 
           if estado_anterior is not None:
 
-              objetivo_anterior = (
-                  estado_anterior.get(
-                      "fecha_objetivo"
-                  )
+              objetivo_anterior = estado_anterior.get(
+                  "fecha_objetivo"
               )
 
-              disponible_anterior = (
-                  estado_anterior.get(
-                      "available",
-                      False
-                  )
+              disponible_anterior = estado_anterior.get(
+                  "available",
+                  False
               )
 
-
-          # --------------------------------------------------
-          # SI EXISTE UN OBJETIVO PENDIENTE
-          # --------------------------------------------------
-
-          if (
-              objetivo_anterior
-              and not disponible_anterior
-          ):
+          # Si hay un objetivo pendiente, se vuelve a intentar
+          # esa misma fecha hasta que OMIE publique el fichero.
+          if objetivo_anterior and not disponible_anterior:
 
               fecha_objetivo = datetime.date.fromisoformat(
                   objetivo_anterior
               )
 
-              print("")
-              print(
-                  "Se mantiene el objetivo pendiente:"
-              )
+              fechas_a_probar = [fecha_objetivo]
 
-              print(
-                  fecha_objetivo
-              )
+              print("Se mantiene el objetivo pendiente:", fecha_objetivo)
 
-
-          # --------------------------------------------------
-          # SI EL OBJETIVO ANTERIOR YA ESTABA DISPONIBLE
-          # --------------------------------------------------
-
-          elif (
-              objetivo_anterior
-              and disponible_anterior
-          ):
-
-              fecha_objetivo_anterior = (
-                  datetime.date.fromisoformat(
-                      objetivo_anterior
-                  )
-              )
-
-
-              # Si ya estamos en un nuevo ciclo
-              # después de las 14:30, buscamos
-              # el día siguiente.
-
-              if (
-                  fecha_hoy_real
-                  > fecha_objetivo_anterior
-                  or (
-                      fecha_hoy_real
-                      == fecha_objetivo_anterior
-                      and ahora.hour >= 14
-                      and ahora.minute >= 30
-                  )
-              ):
-
-                  fecha_objetivo = (
-                      fecha_hoy_real
-                      + datetime.timedelta(days=1)
-                  )
-
-                  print("")
-                  print(
-                      "Nuevo ciclo OMIE."
-                  )
-
-
-              else:
-
-                  fecha_objetivo = (
-                      fecha_objetivo_anterior
-                  )
-
-                  print("")
-                  print(
-                      "Se mantiene el objetivo anterior:"
-                  )
-
-                  print(
-                      fecha_objetivo
-                  )
-
-
-          # --------------------------------------------------
-          # SI NO EXISTE ESTADO ANTERIOR
-          # --------------------------------------------------
-
-          else:
+          # Si el JSON anterior es válido, se comprueba el día
+          # siguiente. Si OMIE aún no lo ha publicado, se conserva
+          # íntegro el JSON/XML anterior.
+          elif objetivo_anterior and disponible_anterior:
 
               fecha_objetivo = (
-                  fecha_hoy_real
+                  datetime.date.fromisoformat(objetivo_anterior)
                   + datetime.timedelta(days=1)
               )
 
-              print("")
-              print(
-                  "No existe objetivo anterior."
-              )
+              fechas_a_probar = [fecha_objetivo]
 
-              print(
-                  "Nuevo objetivo:",
-                  fecha_objetivo
-              )
+              print("Siguiente fecha a comprobar:", fecha_objetivo)
 
+          # Si no existe un estado anterior (o no se puede leer),
+          # buscar la publicación más reciente disponible: mañana,
+          # hoy y, si todavía no se ha publicado hoy, ayer.
+          else:
 
-          print("")
-          print(
-              "FECHA OBJETIVO:",
-              fecha_objetivo
-          )
+              fechas_a_probar = [
+                  fecha_hoy_real + datetime.timedelta(days=1),
+                  fecha_hoy_real,
+                  fecha_hoy_real - datetime.timedelta(days=1)
+              ]
+
+              fecha_objetivo = fechas_a_probar[0]
+
+              print("No hay un JSON anterior válido.")
+              print("Se probarán las fechas, de más reciente a más antigua:", fechas_a_probar)
 
 
           # ==================================================
@@ -383,12 +307,12 @@ jobs:
                   100
               ):
 
-                  raise Exception(
-                      f"Numero de registros "
-                      f"inesperado para "
-                      f"{fecha_str}: "
-                      f"{cantidad}"
+                  print(
+                      f"Fichero no válido para {fecha_str}: "
+                      f"se esperaban 92, 96 o 100 registros y hay {cantidad}."
                   )
+
+                  return None
 
 
               precios.sort(
@@ -404,145 +328,86 @@ jobs:
 
 
           # ==================================================
-          # COMPROBAR FECHA OBJETIVO
+          # BUSCAR LA PUBLICACION OMIE MAS RECIENTE DISPONIBLE
           # ==================================================
 
-          precios_objetivo = (
-              descargar_precios(
-                  fecha_objetivo
-              )
-          )
+          precios_objetivo = None
+          fecha_encontrada = None
 
+          for fecha_candidata in fechas_a_probar:
 
-          # ==================================================
-          # SI TODAVIA NO EXISTE
-          # ==================================================
+              precios_candidatos = descargar_precios(fecha_candidata)
+
+              if precios_candidatos is not None:
+
+                  # La publicación debe tener también el día anterior,
+                  # porque el JSON/RSS entrega hoy y mañana juntos.
+                  fecha_previa = fecha_candidata - datetime.timedelta(days=1)
+                  precios_previos_candidatos = descargar_precios(fecha_previa)
+
+                  if precios_previos_candidatos is not None:
+                      fecha_objetivo = fecha_candidata
+                      precios_objetivo = precios_candidatos
+                      precios_anterior = precios_previos_candidatos
+                      fecha_anterior = fecha_previa
+                      fecha_encontrada = fecha_candidata
+                      break
+
+                  print(
+                      "La fecha candidata está publicada, pero no se ha podido "
+                      "obtener el día anterior; se probará la siguiente fecha."
+                  )
 
           if precios_objetivo is None:
 
-              datos = {
-
-                  "available": False,
-
-                  "fecha_objetivo":
-                      fecha_objetivo.isoformat(),
-
-                  "fecha_manana":
-                      fecha_objetivo.isoformat(),
-
-                  "motivo":
-                      "OMIE todavía no ha publicado "
-                      "los precios de la fecha objetivo."
-              }
-
-
               print("")
-              print(
-                  "======================================"
-              )
+              print("No se ha encontrado una publicación OMIE válida con el día anterior disponible.")
 
-              print(
-                  " OMIE NO DISPONIBLE"
-              )
+              if estado_anterior is not None:
+                  print("Se conservan omie.json y omie.xml sin modificar.")
+              else:
+                  print("No se crea un estado incompleto; se volverá a intentar en la siguiente ejecución.")
 
-              print(
-                  " Objetivo:",
-                  fecha_objetivo
-              )
+              raise SystemExit(0)
 
-              print(
-                  "======================================"
-              )
+          print("Publicación OMIE seleccionada:", fecha_encontrada)
 
 
           # ==================================================
-          # SI YA EXISTE
+          # CONSTRUIR DATOS PARA JSON Y RSS
           # ==================================================
 
-          else:
+          datos = {
 
-              print("")
-              print(
-                  "======================================"
-              )
+              "available": True,
 
-              print(
-                  " OMIE DISPONIBLE"
-              )
+              "fecha_objetivo":
+                  fecha_objetivo.isoformat(),
 
-              print(
-                  " Objetivo:",
-                  fecha_objetivo
-              )
+              "fecha_hoy":
+                  fecha_anterior.isoformat(),
 
-              print(
-                  " Registros:",
-                  len(precios_objetivo)
-              )
+              "fecha_manana":
+                  fecha_objetivo.isoformat(),
 
-              print(
-                  "======================================"
-              )
+              "hoy": {
 
+                  "registros":
+                      len(precios_anterior),
 
-              # --------------------------------------------------
-              # OBTENER TAMBIEN EL DIA ANTERIOR
-              # --------------------------------------------------
+                  "precios":
+                      precios_anterior
+              },
 
-              fecha_anterior = (
-                  fecha_objetivo
-                  - datetime.timedelta(days=1)
-              )
+              "manana": {
 
+                  "registros":
+                      len(precios_objetivo),
 
-              precios_anterior = (
-                  descargar_precios(
-                      fecha_anterior
-                  )
-              )
-
-
-              if precios_anterior is None:
-
-                  raise Exception(
-                      "OMIE tiene disponible "
-                      "la fecha objetivo pero "
-                      "no se ha podido obtener "
-                      "el día anterior."
-                  )
-
-
-              datos = {
-
-                  "available": True,
-
-                  "fecha_objetivo":
-                      fecha_objetivo.isoformat(),
-
-                  "fecha_hoy":
-                      fecha_anterior.isoformat(),
-
-                  "fecha_manana":
-                      fecha_objetivo.isoformat(),
-
-                  "hoy": {
-
-                      "registros":
-                          len(precios_anterior),
-
-                      "precios":
-                          precios_anterior
-                  },
-
-                  "manana": {
-
-                      "registros":
-                          len(precios_objetivo),
-
-                      "precios":
-                          precios_objetivo
-                  }
+                  "precios":
+                      precios_objetivo
               }
+          }
 
 
           # ==================================================
