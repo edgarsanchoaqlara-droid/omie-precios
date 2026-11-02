@@ -1,0 +1,16 @@
+name: Diagnostico GitHub
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/15 * * * *"
+
+jobs:
+  diagnostico:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Comprobar ejecucion automatica
+        run: |
+          echo "Ejecucion correcta"
+          echo "Fecha UTC:"
+          date -u
